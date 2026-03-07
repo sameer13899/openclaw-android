@@ -1,0 +1,53 @@
+name: Fork Sync
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Run daily at midnight
+  workflow_dispatch:      # Manual trigger
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      # 1️⃣ Checkout fork repository
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PAT_TOKEN }}
+
+      # 2️⃣ Configure Git
+      - name: Configure Git
+        run: |
+          git config --global user.name "fork-sync-bot"
+          git config --global user.email "bot@users.noreply.github.com"
+
+      # 3️⃣ Add upstream remote (must provide manually as input)
+      - name: Add upstream
+        run: |
+          git remote add upstream https://github.com/AidanPark/openclaw-android.git || true
+
+      # 4️⃣ Fetch all upstream branches and tags
+      - name: Fetch upstream
+        run: git fetch upstream --prune --tags
+
+      # 5️⃣ Determine upstream default branch dynamically
+      - name: Determine default branch
+        id: default_branch
+        run: |
+          BRANCH=$(git ls-remote --symref upstream HEAD | awk '/^ref:/{print $2}' | sed 's|refs/heads/||')
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+
+      # 6️⃣ Merge default branch safely (preserve workflow file)
+      - name: Sync default branch
+        run: |
+          git checkout ${{ steps.default_branch.outputs.branch }}
+          git merge upstream/${{ steps.default_branch.outputs.branch }} --allow-unrelated-histories --no-edit
+          git push origin ${{ steps.default_branch.outputs.branch }}
+
+      # 7️⃣ Push all tags
+      - name: Push tags
+        run: git push origin --tags
